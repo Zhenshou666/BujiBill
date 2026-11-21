@@ -22,3 +22,12 @@ samples/
 tools/bin/
 prototype/
 ~$*
+
+# ---- 试过但已废弃的方案：本地留着，不入库 ----
+分享_公网.bat
+tools/share_online.py
+tools/campus_sniff.js
+tools/campus_pull.py
+deploy/
+docker-compose.yml
+.dockerignore
