@@ -109,6 +109,10 @@ def main() -> int:
         try:
             import webview
 
+            # 桌面版默认不允许下载：点「存成表格」没反应就是这么来的。
+            # 打开后 WebView2 会把文件存进系统的下载目录。
+            webview.settings["ALLOW_DOWNLOADS"] = True
+
             webview.create_window(
                 APP_TITLE, url, width=1320, height=900, min_size=(900, 640),
             )

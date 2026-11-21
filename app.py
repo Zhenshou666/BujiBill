@@ -596,8 +596,22 @@ with tab_overview:
 
         c1, c2, c3, c4 = st.columns(4)
         c1.metric("💸 这个月花了", money(consume["amount"].sum()))
-        c2.metric("🧾 收到的", money(income["amount"].sum()))
-        c3.metric("🪙 还剩", money(income["amount"].sum() - consume["amount"].sum()))
+        income_sum = income["amount"].sum()
+        consume_sum = consume["amount"].sum()
+        c2.metric("🧾 收到的", money(income_sum))
+        if income_sum > 0:
+            c3.metric(
+                "🪙 还剩", money(income_sum - consume_sum),
+                help="收到的减去真正花掉的（充值、退款这些不算）",
+            )
+        else:
+            # 只导了支出、没有收入时，「还剩」会等于负的支出总额，是个没意义的数。
+            # 这种情况下换成「平均每天花」，同样是这一格的位置，但说得通。
+            _days = max(1, (df["ts"].max() - df["ts"].min()).days + 1)
+            c3.metric(
+                "📅 平均每天花", money(consume_sum / _days),
+                help="这份账单里没有收入记录，所以不显示「还剩」；这里是真实消费摊到每天的金额",
+            )
         # 只看「支出」侧的非消费记录，这样和左边「真实消费支出」口径一致。
         # 原写法右侧表格用 kind != NORMAL（含收入侧）、标题却用支出侧，两处金额对不上。
         dropped = df[(df["kind"] != Kind.NORMAL) & (df["direction"] == "支出")]

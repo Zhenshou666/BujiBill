@@ -60,13 +60,26 @@ _BUNDLED_RULES = PROJECT_ROOT / "data" / "rules.json"
 
 
 def _seed_rules() -> None:
+    """把规则表复制到数据目录一份，供用户增删词条。
+
+    逐个候选源尝试，任何一个失败都只是少一个备份，不该让程序起不来
+    （打包版里数据目录只读、解压不全、被杀软拦下都遇到过）。
+    """
     target = DATA_DIR / "data" / "rules.json"
-    if target.exists() or not _BUNDLED_RULES.exists():
+    if target.exists():
         return
-    if _BUNDLED_RULES.resolve() == target.resolve():
-        return
-    target.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copyfile(_BUNDLED_RULES, target)
+    sources = [_BUNDLED_RULES]
+    if getattr(sys, "frozen", False):
+        sources.append(Path(sys.executable).parent / "data" / "rules.json")
+    for src in sources:
+        try:
+            if not src.exists() or src.resolve() == target.resolve():
+                continue
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(src, target)
+            return
+        except OSError:
+            continue
 
 
 def _migrate_legacy() -> None:

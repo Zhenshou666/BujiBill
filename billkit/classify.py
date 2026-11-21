@@ -9,12 +9,24 @@
 from __future__ import annotations
 
 import json
+import sys
 from functools import lru_cache
 from pathlib import Path
 
+from .default_rules import DEFAULT_RULES
 from .store import DATA_DIR
 
 RULES_PATH = DATA_DIR / "data" / "rules.json"
+
+# 规则表可能的位置，按优先级排：数据目录 → 打包内的备份 → exe 同级。
+# 打包版只要数据目录那份没生成（解压不全、目录只读、被杀软拦），
+# 以前会直接抛 FileNotFoundError 把整个页面打崩；现在逐个试，全都失败就降级成空表。
+_CANDIDATES: tuple[Path, ...] = (
+    RULES_PATH,
+    Path(__file__).resolve().parent.parent / "data" / "rules.json",
+)
+if getattr(sys, "frozen", False):
+    _CANDIDATES += (Path(sys.executable).parent / "data" / "rules.json",)
 
 # 支付宝「记账本」导出自带「分类」列（用户自己填的），比关键词更准，优先采用。
 CATEGORY_ALIASES: dict[str, str] = {
@@ -37,13 +49,20 @@ CATEGORY_ALIASES: dict[str, str] = {
 
 @lru_cache(maxsize=1)
 def load_rules() -> dict[str, tuple[str, ...]]:
-    raw = json.loads(RULES_PATH.read_text(encoding="utf-8"))
-    # 下划线开头的键是注释，跳过；关键词统一转小写，避免 Steam / STARBUCKS 匹配不上
-    return {
-        k: tuple(w.lower() for w in v)
-        for k, v in raw.items()
-        if not k.startswith("_")
-    }
+    """读规则表。数据目录 → 包内备份 → 代码内置默认表，逐级降级，绝不让页面崩。"""
+    for path in _CANDIDATES:
+        try:
+            raw = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        # 下划线开头的键是注释，跳过；关键词统一转小写，避免 Steam / STARBUCKS 匹配不上
+        return {
+            k: tuple(w.lower() for w in v)
+            for k, v in raw.items()
+            if not k.startswith("_")
+        }
+    # 连包内备份都没有：用写死在代码里的默认词表，保证还能分类
+    return dict(DEFAULT_RULES)
 
 
 def classify(txn) -> str:
@@ -79,12 +98,18 @@ def add_rule(category: str, keyword: str) -> str:
     kw = (keyword or "").strip()
     if not kw:
         raise ValueError("关键词不能为空")
-    raw = json.loads(RULES_PATH.read_text(encoding="utf-8"))
+    raw: dict = {}
+    if RULES_PATH.exists():
+        try:
+            raw = json.loads(RULES_PATH.read_text(encoding="utf-8"))
+        except ValueError:
+            raw = {}
     words = raw.setdefault(category, [])
     if not isinstance(words, list):
         raise ValueError(f"分类「{category}」的规则格式不对")
     if kw not in words:
         words.append(kw)
+        RULES_PATH.parent.mkdir(parents=True, exist_ok=True)
         RULES_PATH.write_text(
             json.dumps(raw, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
         )

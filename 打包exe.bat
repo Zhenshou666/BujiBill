@@ -2,7 +2,7 @@
 chcp 65001 >nul
 cd /d "%~dp0"
 rem 版本名：改这一行就行，exe / 文件夹 / zip 会一起用这个名字
-set NAME=不记账本beta1
+set NAME=不记账本beta2
 echo.
 echo   building Windows desktop app (2-3 min) ...
 echo.
