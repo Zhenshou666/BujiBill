@@ -1,0 +1,16 @@
+# 在服务器上：docker compose up -d --build
+services:
+  billbook:
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile
+    image: billbook:latest
+    container_name: billbook
+    restart: unless-stopped
+    ports:
+      - "8501:8501"
+    environment:
+      BILLKIT_SHARE: "1"        # "1" = 每个访客独立空账本；"0" = 自己的私人账本
+      TZ: Asia/Shanghai
+    volumes:
+      - ./data/profiles:/app/data/profiles

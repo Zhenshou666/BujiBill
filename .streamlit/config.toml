@@ -1,0 +1,16 @@
+# Streamlit 原生主题：把手帐风的纸色/墨色/抹茶主色写进配置，
+# 这样页签下划线、复选框、滑块这些原生组件不用逐条 CSS 硬压。
+[theme]
+base = "light"
+primaryColor = "#8AA6BF"
+backgroundColor = "#F7F4EC"
+secondaryBackgroundColor = "#F1EDE3"
+textColor = "#3B3A45"
+font = "serif"
+
+[server]
+# headless = true 会让 Streamlit 只起服务、不自动打开浏览器；
+# 本地开发想自动弹窗就保持 false。
+headless = false
+# 让 ./static 下的文件可以通过 /app/static/ 访问（字体走这里，不依赖外网 CDN）
+enableStaticServing = true
