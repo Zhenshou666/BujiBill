@@ -1,0 +1,4 @@
+# 打包成 Windows 桌面版才需要的依赖（运行本项目不需要装）
+-r requirements.txt
+pyinstaller==6.22.3
+pywebview==6.2.1

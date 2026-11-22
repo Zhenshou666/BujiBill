@@ -1,7 +1,7 @@
 # 不记账本 · BujiBill
 
 微信 / 支付宝 / 校园一卡通 三源账单整合与消费分析。
-可以用浏览器跑，也能打包成 Windows 桌面程序（`.exe`）。数据全部留在本机，不联网。
+可以用浏览器跑，也能打包成 Windows 桌面程序（`.exe`）。账单数据全部留在本机、不上传任何服务器。
 
 > 课程项目：Python 程序设计
 
@@ -13,7 +13,8 @@
 **真实消费只有 44 元，但三家账单直接相加会得到 144 元。**
 
 这个工具把「充值」识别成账户内部转账并剔除，只保留真正产生消费的那一侧记录。
-示例数据里，不做剔除会算成 **¥1,607.40**，实际只有 **¥469.40**，虚增 **¥1,138.00**。
+示例数据（136 笔，全部为伪造）里，不做剔除会算成 **¥8,374.81**，实际只有 **¥6,849.31**，
+虚增 **¥1,525.50**。这两个数由 `tools/smoke.py` 每次运行实测得出，不是写死的。
 
 ---
 
@@ -27,14 +28,21 @@ python -m venv .venv
 # 2. 生成示例账单（还没拿到真实账单时用）
 .\.venv\Scripts\python.exe tools\make_sample.py
 
-# 3. 自检：解析三份样例，验证去重/退款/转账判定
+# 3. 自检：解析三份样例，验证去重/退款/转账判定（--seed 顺手把样例灌进账本，方便看界面）
 .\.venv\Scripts\python.exe tools\smoke.py
 
 # 4. 启动（Windows 下也可以直接双击 启动.bat）
 .\.venv\Scripts\python.exe -m streamlit run app.py
 ```
 
-浏览器打开 `http://localhost:8501`。数据全在本机，不联网。
+浏览器打开 `http://localhost:8501`。
+
+> 第 3 步不加参数时只做自检、不写账本，打开界面会是空的 —— 想看效果就
+> `python tools\smoke.py --seed`（写入「演示数据」账本），或者直接把
+> `data\wechat\` `data\alipay\` `data\campus\` 里的三份样例拖进「导入」页。
+
+数据全在本机、不上传任何服务器。唯一的对外请求是侧边栏/表格里的渠道图标
+（`cdn.simpleicons.org`），断网时图标不显示、其余功能不受影响。
 
 > ⚠️ 用 `python -m streamlit`，不要用 `.venv\Scripts\streamlit.exe`：
 > 那个启动器把解释器路径写死在 exe 里，路径含中文时会报
@@ -44,11 +52,17 @@ python -m venv .venv
 
 ## 打包成 Windows 桌面版
 
-双击 `打包exe.bat`，两三分钟后得到：
+打包需要额外的依赖（运行本项目用不到）：
+
+```bash
+.\.venv\Scripts\python.exe -m pip install -r requirements-build.txt
+```
+
+然后双击 `打包exe.bat`，两三分钟后得到：
 
 ```
-dist\不记账本beta1\不记账本beta1.exe   双击即用（pywebview 套壳，无地址栏）
-dist\不记账本beta1.zip                分发用，不含任何账本数据
+dist\不记账本beta3\不记账本beta3.exe   双击即用（pywebview 套壳，无地址栏）
+dist\不记账本beta3.zip                分发用，不含任何账本数据
 ```
 
 - 版本名在 `打包exe.bat` 第 5 行 `set NAME=` 改

@@ -1,5 +1,9 @@
-pandas>=2.2
-streamlit>=1.40
-plotly>=5.24
-openpyxl>=3.1
-streamlit-sortables>=1.0.2
+# 运行依赖（钉死版本，保证换台机器装上的是同一套）
+# 注意：streamlit-sortables 在 PyPI 上最新只到 0.3.1，没有 1.x 版本。
+# streamlit 需要 >=1.49：项目里用了 st.iframe 和 width="stretch"，1.40 会直接报错。
+pandas==3.1.1
+numpy==2.5.5
+streamlit==1.67.0
+plotly==7.1.0
+openpyxl==3.1.5
+streamlit-sortables==0.3.1
