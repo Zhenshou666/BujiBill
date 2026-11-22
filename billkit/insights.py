@@ -11,6 +11,8 @@
 """
 from __future__ import annotations
 
+import html
+
 import random
 from dataclasses import dataclass, field
 
@@ -114,7 +116,9 @@ def analyse(consume: pd.DataFrame, dropped: pd.DataFrame | None = None) -> Note 
     # ---------- 单笔最大 ----------
     if n >= 5:
         row = consume.loc[consume["amount"].idxmax()]
-        who = str(row.get("counterparty") or "").strip() or "某家店"
+        # 商户名来自用户账单，是不可信输入；这里只转义它，
+        # 外面那层 <b> 是我们自己写的标记，不能一起转义掉。
+        who = html.escape(str(row.get("counterparty") or "").strip() or "某家店")
         amt = float(row["amount"])
         if amt >= max(50.0, total * 0.12):
             findings.append(_pick(

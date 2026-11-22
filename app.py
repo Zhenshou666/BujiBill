@@ -13,7 +13,6 @@
 from __future__ import annotations
 
 import hashlib
-import html as _html
 import os
 import re
 from datetime import datetime, time as dtime, timedelta
@@ -292,7 +291,7 @@ def hint(text: str | None) -> None:
     """
     if text:
         st.markdown(
-            f'<div class="hint">{_html.escape(str(text))}</div>',
+            f'<div class="hint">{text}</div>',
             unsafe_allow_html=True,
         )
 
@@ -304,12 +303,12 @@ def render_note(consume: pd.DataFrame, dropped: pd.DataFrame) -> None:
     note = analyse(consume, dropped)
     if note is None:
         return
-    items = "".join(f"<li>{_html.escape(str(x))}</li>" for x in note.findings)
-    tip = f'<p class="note-tip">💡 {_html.escape(str(note.tip))}</p>' if note.tip else ""
+    items = "".join(f"<li>{x}</li>" for x in note.findings)
+    tip = f'<p class="note-tip">💡 {note.tip}</p>' if note.tip else ""
     st.markdown(
         '<div class="note-card">'
         '<div class="note-title">📝 这段时间的小记</div>'
-        f'<p class="note-lead">{_html.escape(str(note.lead))}</p>'
+        f'<p class="note-lead">{note.lead}</p>'
         f'<ul class="note-list">{items}</ul>'
         f"{tip}"
         '<div class="note-foot">就写到这儿啦 —— 说得对不对，你心里最有数～</div>'
