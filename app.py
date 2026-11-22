@@ -13,6 +13,7 @@
 from __future__ import annotations
 
 import hashlib
+import html as _html
 import os
 import re
 from datetime import datetime, time as dtime, timedelta
@@ -284,9 +285,16 @@ def page_welcome() -> None:
 
 
 def hint(text: str | None) -> None:
-    """图表/表格下面的一行小注。没内容就不占位。"""
+    """图表/表格下面的一行小注。没内容就不占位。
+
+    内容是本地规则拼出来的，里面会带商户名 —— 商户名来自用户上传的账单，
+    属于不可信输入，进 HTML 前必须转义。
+    """
     if text:
-        st.markdown(f'<div class="hint">{text}</div>', unsafe_allow_html=True)
+        st.markdown(
+            f'<div class="hint">{_html.escape(str(text))}</div>',
+            unsafe_allow_html=True,
+        )
 
 
 def render_note(consume: pd.DataFrame, dropped: pd.DataFrame) -> None:
@@ -296,12 +304,12 @@ def render_note(consume: pd.DataFrame, dropped: pd.DataFrame) -> None:
     note = analyse(consume, dropped)
     if note is None:
         return
-    items = "".join(f"<li>{x}</li>" for x in note.findings)
-    tip = f'<p class="note-tip">💡 {note.tip}</p>' if note.tip else ""
+    items = "".join(f"<li>{_html.escape(str(x))}</li>" for x in note.findings)
+    tip = f'<p class="note-tip">💡 {_html.escape(str(note.tip))}</p>' if note.tip else ""
     st.markdown(
         '<div class="note-card">'
         '<div class="note-title">📝 这段时间的小记</div>'
-        f'<p class="note-lead">{note.lead}</p>'
+        f'<p class="note-lead">{_html.escape(str(note.lead))}</p>'
         f'<ul class="note-list">{items}</ul>'
         f"{tip}"
         '<div class="note-foot">就写到这儿啦 —— 说得对不对，你心里最有数～</div>'
@@ -558,8 +566,10 @@ with tab_import:
     if st.button("读进来", type="primary", key="tab_go"):
         if not targets:
             st.warning("还没选文件呢～ 先把账单拖到上面的框里，我就在这儿等着。")
-        else:
-            run_import(targets)
+        elif run_import(targets):
+            # 清完缓存要顺手 rerun，否则别的页签还是导入前的旧数据
+            st.session_state["flash"] = "导入好啦～下面是你的账单全貌"
+            st.rerun()
 
     st.divider()
     st.markdown("#### 🧾 这些数字是怎么算出来的")
@@ -588,29 +598,49 @@ with tab_import:
 # ============================================================ 总览
 
 with tab_overview:
-    df = load(current_user())
-    if df.empty:
+    df_all = load(current_user())
+    if df_all.empty:
         st.info("🫙 这里还空着～去「导入」放一份账单进来就好")
     else:
+        # 月份选择：以前这里是拿全部数据当「这个月」，跨月就说不通了
+        _months = sorted(df_all["ts"].dt.to_period("M").unique(), reverse=True)
+        _labels = ["全部"] + [str(m) for m in _months]
+        _col, _ = st.columns([1.1, 2.9])
+        with _col:
+            _pick = st.selectbox("看哪段时间", _labels, index=1
+                                 if len(_labels) > 1 else 0, key="home_month")
+        if _pick == "全部":
+            df = df_all
+            _period = "这段时间"
+        else:
+            df = df_all[df_all["ts"].dt.strftime("%Y-%m") == _pick]
+            _period = f"{int(_pick[5:])} 月"
+
         consume, income = split(df)
 
         c1, c2, c3, c4 = st.columns(4)
-        c1.metric("💸 这个月花了", money(consume["amount"].sum()))
+        c1.metric(f"💸 {_period}花了", money(consume["amount"].sum()))
         income_sum = income["amount"].sum()
         consume_sum = consume["amount"].sum()
         c2.metric("🧾 收到的", money(income_sum))
-        if income_sum > 0:
-            c3.metric(
-                "🪙 还剩", money(income_sum - consume_sum),
-                help="收到的减去真正花掉的（充值、退款这些不算）",
-            )
-        else:
+        if income_sum <= 0:
             # 只导了支出、没有收入时，「还剩」会等于负的支出总额，是个没意义的数。
             # 这种情况下换成「平均每天花」，同样是这一格的位置，但说得通。
             _days = max(1, (df["ts"].max() - df["ts"].min()).days + 1)
             c3.metric(
                 "📅 平均每天花", money(consume_sum / _days),
                 help="这份账单里没有收入记录，所以不显示「还剩」；这里是真实消费摊到每天的金额",
+            )
+        elif income_sum >= consume_sum:
+            c3.metric(
+                "🪙 还剩", money(income_sum - consume_sum),
+                help="收到的减去真正花掉的（充值、退款这些不算）",
+            )
+        else:
+            # 收入只导了一部分时，差额会是负数，写「还剩」容易被读成「超支了」
+            c3.metric(
+                "⚖️ 收支差额", money(income_sum - consume_sum),
+                help="收到的减去花掉的。负数通常是这个月收入没导全，不代表超支",
             )
         # 只看「支出」侧的非消费记录，这样和左边「真实消费支出」口径一致。
         # 原写法右侧表格用 kind != NORMAL（含收入侧）、标题却用支出侧，两处金额对不上。
@@ -668,11 +698,20 @@ with tab_overview:
                     stat.rename(columns={"kind": "性质"})
                 )
                 hint(insights.hint_dropped(dropped))
-                st.caption(
-                    "要是把这些也算进去，总额会变成 "
-                    f"**{money(consume['amount'].sum() + double_count['amount'].sum())}**，"
-                    f"平白多出 {money(double_count['amount'].sum())}。"
-                )
+                # 口径要说清楚：表格里的「没算进花销」含「待确认」，
+                # 而「虚增」只算转账/退款/还款这类真重复计账的，两个数天生不一样。
+                _all_dropped = float(dropped["amount"].sum())
+                _double = float(double_count["amount"].sum())
+                _unclear = _all_dropped - _double
+                _parts = [
+                    f"这 {len(dropped)} 笔共 {money(_all_dropped)} 都没算进花销。",
+                    f"其中转账、退款、还款这类重复计账的 {money(_double)} 是实打实的虚增；",
+                ]
+                if _unclear > 0.005:
+                    _parts.append(
+                        f"另有 {money(_unclear)} 标了「待确认」，性质还没定，所以没算进虚增。"
+                    )
+                st.caption("".join(_parts))
 
         st.divider()
         st.markdown("##### 📅 这份账单的来路")
@@ -1207,7 +1246,12 @@ with tab_campus:
                     )
                     if st.button("导入到数据库", type="primary", key="campus_import"):
                         added, skipped = store.save(txns, current_db())
-                        st.success(f"新增 {added} 笔，已存在跳过 {skipped} 笔")
+                        # 和「导入」页保持一致：清缓存 + rerun，否则总览还是旧数据
+                        st.session_state["flash"] = (
+                            f"校园卡读进来啦～新存了 {added} 笔，之前存过的跳过 {skipped} 笔"
+                        )
+                        load.clear()
+                        st.rerun()
                 with st.expander("高级：看看字段有没有认错", expanded=False):
                     report = CampusAdapter.columns_report(probe.getvalue())
                     st.write("实际列名：", report["实际列名"])

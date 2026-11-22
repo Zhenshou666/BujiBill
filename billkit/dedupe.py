@@ -19,10 +19,11 @@ CAMPUS_WORDS = ("校园卡", "一卡通", "饭卡", "城院", "城市学院")
 RECHARGE_WORDS = ("充值", "圈存", "续费")
 
 # 账户之间的搬运（不要放「存入」「转」这类过于宽泛的词，会误伤红包和转账）
+# 也不要放裸的「转入 / 转出」：微信收入备注里写「转入」的很多，
+# 那是真实收入，被当成内部转账就凭空少了一笔钱。只认带限定语的形态。
 TRANSFER_WORDS = (
     "零钱提现", "提现到", "提现",
     "余额宝", "余利宝", "自动转入", "转入到", "转出到",
-    "转入", "转出",                     # 余利宝/理财通这类货币基金划转
     "理财通", "零钱通", "自动赎回",
 )
 
@@ -84,17 +85,20 @@ def mark_kind(txn):
         return txn
 
     # 2) 一卡通充值（跨渠道重复的关键）
+    # 校园词必须和充值词同时出现才算转账。「浙大城市学院食堂」「校园超市」都是真消费，
+    # 只出现校园词就判转账，会把吃饭的钱静默吞掉。
     if txn.channel != Channel.CAMPUS:
-        if any(w in text for w in CAMPUS_WORDS) and any(w in text for w in RECHARGE_WORDS):
+        has_campus = any(w in text for w in CAMPUS_WORDS)
+        if has_campus and any(w in text for w in RECHARGE_WORDS):
             txn.kind = Kind.TRANSFER
             txn.category = "内部转账"
             _add_note(txn, "一卡通充值，由校园卡明细记录真实消费")
             return txn
-        if any(w in text for w in CAMPUS_WORDS) and txn.direction == Direction.EXPENSE:
-            # 只有对方是校园卡、没写"充值"字样，大概率仍是充值
-            txn.kind = Kind.TRANSFER
-            txn.category = "内部转账"
-            _add_note(txn, "疑似一卡通充值，请人工确认")
+        if has_campus and txn.direction == Direction.EXPENSE and _sounds_like_card_account(txn):
+            # 对方名就是一卡通/校园卡这类账户名、又没写「充值」：拿不准，
+            # 交给用户确认，不擅自当成消费，也不静默剔除。
+            txn.kind = Kind.UNCLEAR
+            _add_note(txn, "疑似一卡通充值，请确认后再定")
             return txn
 
     # 3) 卡内充值（校园卡自己的充值记录）
@@ -156,6 +160,20 @@ def find_recharge_pairs(df):
     return recharge_total, campus_total
 
 
+# 校园里"商户"式的词：出现这些说明是真实消费，不是给卡充值
+_SHOP_WORDS = ("食堂", "餐厅", "超市", "便利店", "商店", "小吃", "水果", "餐", "饭", "文印", "书店")
+
+
+def _sounds_like_card_account(txn) -> bool:
+    """对方名看着像「校园卡 / 一卡通」这张卡本身，而不是校园里的某个商户。"""
+    name = (txn.counterparty or "").strip()
+    if not name:
+        return False
+    if any(w in name for w in _SHOP_WORDS):
+        return False
+    return any(w in name for w in CAMPUS_WORDS)
+
+
 def _refund_target_name(txn) -> str:
     """支付宝的退款行，对方名是「退款-原商户名」，把前缀削掉就是线索。"""
     name = (txn.counterparty or "").strip()
@@ -193,11 +211,17 @@ def pair_refunds(txns) -> int:
                 continue
             if abs(c.amount - r.amount) > 0.01:
                 continue
-            # 名字对得上优先，其次按时间距离
-            name_hit = 1 if target and (target == (c.counterparty or "").strip()
-                                       or target in (c.counterparty or "")
-                                       or (c.counterparty or "") in target) else 0
-            score = (name_hit, -abs((r.time - c.time).total_seconds()))
+            c_name = (c.counterparty or "").strip()
+            # 名字对得上 = 同一个商户；否则要求对方名一致且 7 天内。
+            # 只凭"金额一样"就配对，会把 9 月买的东西强行抵掉 11 月的退款。
+            name_hit = bool(target) and (
+                target == c_name or target in c_name or c_name in target
+            )
+            same_merchant = bool(c_name) and c_name == (r.counterparty or "").strip()
+            within_week = abs((r.time - c.time).days) <= 7
+            if not (name_hit or (same_merchant and within_week)):
+                continue
+            score = (1 if name_hit else 0, -abs((r.time - c.time).total_seconds()))
             if best_score is None or score > best_score:
                 best, best_score = c, score
         if best is not None:
@@ -206,4 +230,6 @@ def pair_refunds(txns) -> int:
             _add_note(best, "已退款，不计入消费")
             used.add(id(best))
             paired += 1
+        else:
+            _add_note(r, "没找到对应的那笔消费，先不计入花销")
     return paired
