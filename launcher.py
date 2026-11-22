@@ -5,7 +5,7 @@
 那个子进程在**主线程**里跑 Streamlit 服务；本进程只负责开窗口。
 不开线程是因为 Streamlit 的启动流程要注册信号量，在线程里会报错。
 
-打包成 exe 后：账本数据存 %LOCALAPPDATA%\\不记账本\\data\\
+打包成 exe 后：账本数据存 **exe 同级的 data\\**（删掉文件夹即清空）。
 """
 from __future__ import annotations
 
@@ -100,7 +100,12 @@ def main() -> int:
 
     port = _free_port()
     url = f"http://127.0.0.1:{port}"
-    proc = subprocess.Popen([sys.executable, "--serve", "--port", str(port)])
+    # 冻结后 sys.executable 就是 exe，直接带参数重启即可；
+    # 开发模式下 sys.executable 是 python.exe，必须补上脚本路径，否则 python 会去找名叫 --serve 的文件。
+    cmd = [sys.executable, "--serve", "--port", str(port)]
+    if not getattr(sys, "frozen", False):
+        cmd.insert(1, str(Path(__file__).resolve()))
+    proc = subprocess.Popen(cmd)
     try:
         if not _wait_health(port):
             print("服务没能启动，请把窗口截图发我。")

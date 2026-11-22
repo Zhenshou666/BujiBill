@@ -261,22 +261,39 @@ CAMPUS_HEADER = ["交易时间", "交易类型", "商户名称", "交易金额",
 
 
 def build_campus() -> list[list[str]]:
+    """按时间顺序记账，余额永远不会出现负数。
+
+    以前的写法是"固定 158.80 起步、最后再补三笔充值"，随机消费很容易把余额刷成负数，
+    真实一卡通不可能这样，所以改成先算一遍最低点、再把期初余额补够。
+    """
     shops = ["第一食堂", "第二食堂", "第三食堂", "学校超市", "校医院挂号", "文印中心"]
-    rows, balance = [], 158.80
+    events: list[list] = []
     for _ in range(16):
         shop = random.choice(shops)
         amt = float(rand_amount(3, 26)) if "食堂" in shop else float(rand_amount(8, 60))
-        balance = round(balance - amt, 2)
-        rows.append([rand_time(days_ago_min=1).strftime("%Y-%m-%d %H:%M:%S"),
-                     "消费", shop, f"{amt:.2f}", f"{balance:.2f}"])
+        events.append([rand_time(days_ago_min=1), "消费", shop, amt])
+
     # 三笔充值，与微信/支付宝那三条充值对应上
     for ts, note, amount in [
         ("2026-11-15 18:00:00", "微信充值", "100.00"),
         ("2026-11-11 21:36:00", "支付宝充值", "200.00"),
         ("2026-10-20 12:02:00", "支付宝充值", "150.00"),
     ]:
-        balance = round(balance + float(amount), 2)
-        rows.append([ts, "充值", note, amount, f"{balance:.2f}"])
+        events.append([datetime.strptime(ts, "%Y-%m-%d %H:%M:%S"), "充值", note, float(amount)])
+
+    events.sort(key=lambda e: e[0])
+
+    run, low = 0.0, 0.0
+    for _, kind, _, amt in events:
+        run += amt if kind == "充值" else -amt
+        low = min(low, run)
+    balance = round(-low + 12.0, 2)      # 期初余额：保证全程不低于 0
+
+    rows = []
+    for ts, kind, name, amt in events:
+        balance = round(balance + (amt if kind == "充值" else -amt), 2)
+        rows.append([ts.strftime("%Y-%m-%d %H:%M:%S"), kind, name,
+                     f"{amt:.2f}", f"{balance:.2f}"])
     rows.sort(key=lambda r: r[0], reverse=True)
     return rows
 
